@@ -1,11 +1,14 @@
 ---
 name: roblox-gui
-description: "Use for Studio-authored Roblox UI, UIController screen modules, reactive DataController views, and cross-platform layout."
-last_reviewed: 2026-10-02
+description: "Use for mobile-first Roblox UI, Studio authoring, UIController screens, reactive state, and screenshot-based visual matching."
+last_reviewed: 2026-10-11
 sources:
   - https://create.roblox.com/docs/ui
   - https://create.roblox.com/docs/ui/position-and-size
   - https://create.roblox.com/docs/ui/styling
+  - https://create.roblox.com/docs/reference/engine/classes/ImageLabel
+  - https://create.roblox.com/docs/reference/engine/classes/ImageButton
+  - https://create.roblox.com/docs/reference/engine/classes/UIStroke
   - original
   - https://raw.githubusercontent.com/tarellfrost/roblox-game-boilerplate/master/AGENTS.md
 ---
@@ -14,20 +17,28 @@ sources:
 
 ## When to Load
 
-Load for this domain in a game based on tarellfrost/roblox-game-boilerplate.
-Explicit user choices and the current project AGENTS.md take precedence; use
-the supplied architecture rather than general-purpose examples from another framework.
+Load for boilerplate UI. User choices and AGENTS.md take precedence. Read the reference.
 
 ## Quick Reference
 
-- Author ScreenGuis and layout in StarterGui in Studio; save the place. Rojo does not serialize this UI under the supplied mapping.
-- UIController owns all screens. Add Screens/<Name>.luau and register it in UIController/init.luau's modules table; do not add one controller per screen.
-- Screens return new(context, gui) and an object with Modal, StartsOpen, Open, Close, Destroy. Use the existing Types contract.
-- Use context.Open/Close to navigate and context.Controllers to access systems; screens never require one another.
-- Read player state through DataController:Observe and clean connections with Trove. Send intent through Packet; the server decides outcomes.
-- Find authored elements by name and check class before using them. Missing GUI disables only that screen through the existing loader.
-- Prefer layouts, constraints, readable text, safe areas, touch targets, and gamepad focus. Verify open/close and respawn behavior.
-- If Studio tooling is unavailable, finish screen-module code and report the missing authoring step. Generate UI in code only when the user chooses that approach.
-- For a requested visual style, search INDEX.md in the full repository's ui-references folder, read the selected STYLE.md, and open its actual screenshots. Templates without images are briefs, not verified references. Skills-only installs may omit this folder; report missing access rather than claiming a match.
+- NEVER use layout offsets: Position/Size, padding, spacing, cells, corners, tiles and tween endpoints use scale with zero offsets, including descendants.
+- Mobile first: plan portrait/landscape with safe areas, readable text, usable controls and room for movement/jump controls. Menus stay compact with internal scrolling.
+- Montserrat only: Black/900 titles (FontWeight.Heavy), ExtraBold/800 descriptions via FontFace. Never Fredoka One.
+- Stud controls: ImageButtons; headers/backgrounds: ImageLabels. Image="rbxassetid://6927295847", ScaleType=Tile, ImageTransparency=0.5, UIStroke.ApplyStrokeMode=Border. No frame-built studs.
+- Gradients everywhere except white text. All-black frames: BackgroundTransparency=0.5. Large empty artwork ImageLabels separate from tiles; no ART boxes.
+- Rules constrain design, not replace it. Preserve reference proportions, text hierarchy and texture density; static UI still needs visual quality. See full.md's visual-quality guidance.
+- Author StarterGui and save the place. Preserve ScreenGui per screen and one UIController; register screen modules. Runtime generation requires user choice.
+- Follow Types screen contract, context.Open/Close and Trove cleanup; check names/classes. Add bounded juice with reduced effects.
 
-> Implementation contracts and examples: [references/full.md](references/full.md).
+## Layout decisions and scope
+
+- Use scale-based gaps so neighboring button borders never touch.
+
+- Each navigation button needs a unique destination. Index and Collection are one destination unless explicitly distinguished. Never add buttons to fill a grid.
+- Group Settings with main navigation unless references or instructions place it elsewhere.
+- Justify elements through the request or references. No filler branding, banners, menus, promotions or features; incomplete grids are acceptable.
+- UI-only means presentation and UI interactions: no progression changes, reward grants, purchases or gameplay services.
+- Briefly check structure; leave device/orientation testing to the user unless requested. Mobile-friendly does not imply repeated scaling tests.
+- Inspect one overall HUD view; check unique destinations, justified elements and composition.
+
+> Full guidance: [references/full.md](references/full.md).
