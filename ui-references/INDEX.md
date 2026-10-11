@@ -7,6 +7,11 @@ Studio authoring and UIController architecture.
 | Style | Visual tags | Screens | Reference status |
 | --- | --- | --- | --- |
 | [Colorful Rounded](colorful-rounded/STYLE.md) | colorful, rounded, chunky, outlined, playful | HUD, shop, inventory | Template only; screenshots needed |
+| [Brainrot](brainrot/STYLE.md) | saturated, stud-texture, outlined, glossy-icons, rainbow, lime-actions | HUD, rewards, shop, collection, rebirth, quests | 24 supplied captures (22 unique); source creators/licenses unknown |
+
+Brainrot includes a [visual catalog](brainrot/REFERENCES.md) and
+[searchable manifest](brainrot/manifest.json). Open the selected PNGs when
+matching a style; captions alone do not replace visual inspection.
 
 ## Add screenshots to the first style
 
