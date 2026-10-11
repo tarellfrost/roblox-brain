@@ -106,6 +106,27 @@ requirements; report the remaining GUI work. Do not silently change to React,
 Fusion, or Instance.new UI. If the user asks for generated/reactive UI, explain
 how its rendering owner fits the existing screen contract and dependencies.
 
+## Visual style references
+
+When the user asks for a reference style, locate INDEX.md inside the root
+ui-references folder of the available full roblox-brain checkout. This library may be absent in
+a skills-only installation. A user-supplied screenshot can also serve directly
+as a reference without the library. Do not assume a relative filesystem path
+from an installed skill points back to the original repository.
+
+Select by visual tags and screen purpose, read the chosen STYLE.md, and open
+its relevant images using an image-viewing tool. Establish the primary style
+before mixing references. Extract proportions, colors, typography, shapes,
+outlines, spacing, and density; apply them through the existing screen contract
+and Studio authoring workflow. A still image is not evidence of animation or
+interaction behavior. Confirm reuse rights before copying referenced artwork.
+
+The initial colorful-rounded style is explicitly a template with no screenshots.
+Its draft preferences are usable as a written brief, but cannot establish visual
+similarity to an unseen game. Report unavailable images or missing library access
+and continue only with the references/brief actually available. Compare captured
+result images at target device sizes before claiming the requested style matches.
+
 ## Verification
 
 Test missing/wrong-class elements, delayed data, missing ScreenGui, modal

@@ -28,5 +28,6 @@ the supplied architecture rather than general-purpose examples from another fram
 - Find authored elements by name and check class before using them. Missing GUI disables only that screen through the existing loader.
 - Prefer layouts, constraints, readable text, safe areas, touch targets, and gamepad focus. Verify open/close and respawn behavior.
 - If Studio tooling is unavailable, finish screen-module code and report the missing authoring step. Generate UI in code only when the user chooses that approach.
+- For a requested visual style, search INDEX.md in the full repository's ui-references folder, read the selected STYLE.md, and open its actual screenshots. Templates without images are briefs, not verified references. Skills-only installs may omit this folder; report missing access rather than claiming a match.
 
 > Implementation contracts and examples: [references/full.md](references/full.md).

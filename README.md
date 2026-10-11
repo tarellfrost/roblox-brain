@@ -40,6 +40,18 @@ Replica state, DataService persistence, PurchaseService receipts, and
 UIController screens. These are conventions of this template, not a universal
 Roblox standard. See BOILERPLATE-INTEGRATION.md for use and validation limits.
 
+## UI visual reference library
+
+Browse [ui-references/INDEX.md](ui-references/INDEX.md) for screenshot-based style
+references. The first style, Colorful Rounded, is a template ready for your HUD,
+shop, inventory, mobile, and button-detail screenshots. It currently contains
+draft style guidance and upload slots, not example screenshots.
+
+The GUI skill routes style requests to this library when the full repository is
+available. A skills-only install may omit the root-level folder; keep a local
+checkout available or supply the selected images separately. The library is
+ready for manual/tag-based selection; no automated RAG service is included.
+
 ## Install
 
 **All 29 skills:**
