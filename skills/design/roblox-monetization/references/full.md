@@ -1,187 +1,115 @@
-# roblox monetization: full reference
+# Boilerplate Purchases and Entitlements: Full Reference
 
-> Code examples are illustrative. Adapt them to your project and verify in Studio before production use.
+## Project priority and scope
 
-This guide focuses on the server-side correctness of Roblox's purchase APIs. Product catalog setup and current policy requirements change over time; use the linked Creator Hub pages as the authority for eligibility and configuration details.
+These skills target tarellfrost/roblox-game-boilerplate as supplied in the
+master ZIP. Follow explicit user choices and the project's current AGENTS.md;
+then use its existing source, registries, manifests, and module contracts to
+resolve implementation details. This is a project convention, not a claim that
+every Roblox game must use this architecture. In another project, confirm the
+architecture before applying boilerplate-specific paths or APIs.
 
-## 1. Pick the product type
-
-- **Pass:** durable ownership for an experience.
-- **Developer Product:** repeatable consumable purchase.
-- **Subscription:** recurring benefit with a subscription-specific lifecycle.
-- **Private server or paid access:** access configuration rather than an item grant.
-- **Creator Rewards and ads:** platform programs with their own eligibility and reporting rules.
-
-Do not model all of these as one "purchase" table. Their ownership, renewal, refund, and retry behavior differ.
-
-## 2. Keep prompting separate from granting
-
-The client owns the presentation and can request a prompt. The server owns the entitlement. A button click or `PromptProductPurchaseFinished` event is never proof of a Developer Product grant.
-
-```luau
--- LocalScript: presentation only
-local MarketplaceService = game:GetService("MarketplaceService")
-local Players = game:GetService("Players")
-
-buyButton.Activated:Connect(function()
-    MarketplaceService:PromptProductPurchase(Players.LocalPlayer, PRODUCT_ID)
-end)
-```
-
-For a Game Pass, the server can check ownership before enabling a durable feature.
-
-```luau
-local MarketplaceService = game:GetService("MarketplaceService")
-
-local function ownsPass(player: Player, passId: number): boolean
-    local ok, owns = pcall(function()
-        return MarketplaceService:UserOwnsGamePassAsync(player.UserId, passId)
-    end)
-    return ok and owns == true
-end
-```
-
-Cache a successful result when appropriate, but provide an invalidation or refresh path for purchases made during the session. Handle API failure as "not confirmed yet," not as a permanent denial or grant.
+Code is authored on disk under src/server, src/client, and src/shared and synced
+with Rojo. Studio owns the authored place, geometry, Lighting, and StarterGui.
+Mapped modules live directly under Roblox service roots; there are no additional
+Server, Client, or Shared wrapper folders in Studio. Keep --!strict, PascalCase
+public APIs, camelCase locals, and the repository's StyLua settings. Code examples
+below are illustrative integration examples; verify them in the target project
+with scripts/check.ps1 and a feature-appropriate Studio playtest. Only directives
+such as --!strict belong in generated code comments under the supplied policy.
 
 ## 3. Centralize Developer Product receipts
 
-Use one server-owned Developer Product receipt path. The example below uses `ProcessReceipt`; alternatively, [`BindReceiptHandler`](https://create.roblox.com/docs/reference/engine/classes/MarketplaceService#BindReceiptHandler) accepts `Enum.ReceiptType.DeveloperProduct` with an optional product-ID filter. Whichever path owns the receipt must:
+PurchaseService/init.luau assigns MarketplaceService.ProcessReceipt in Start
+and clears it in Destroy. It finds the player and DataService profile, checks
+Receipts[purchaseId], executes the matching Products handler, records the ID,
+prunes the ledger, and calls WaitForSave with a saved-receipt predicate.
+It returns PurchaseGranted only after the snapshot check succeeds; otherwise
+NotProcessedYet. Do not replace this with a skill's standalone callback or a
+second BindReceiptHandler dispatcher.
 
-1. identify the product and player;
-2. determine whether this receipt was already granted;
-3. grant through the authoritative data service;
-4. record the receipt or transaction id with the grant;
-5. acknowledge the receipt only after durable success.
-
-For `ProcessReceipt`, return `Enum.ProductPurchaseDecision` values as below. For `BindReceiptHandler`, return `Enum.ReceiptDecision` values.
+Add an entry to src/server/Services/PurchaseService/Products.luau. Illustrative
+grant for a product whose configured ID is 123456789; replace it with the actual
+developer-product ID and requested reward before use:
 
 ```luau
-local MarketplaceService = game:GetService("MarketplaceService")
-local Players = game:GetService("Players")
+--!strict
 
-local productGrants = {
-    [COIN_PRODUCT_ID] = { coins = 500 },
+export type Grant = (player: Player, services: { [string]: any }) -> boolean
+
+local Products: { [number]: Grant } = {
+	[123456789] = function(player: Player, services: { [string]: any }): boolean
+		return services.DataService:AdjustCash(player, 500)
+	end,
 }
 
-MarketplaceService.ProcessReceipt = function(receiptInfo)
-    local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
-    if not player then
-        return Enum.ProductPurchaseDecision.NotProcessedYet
-    end
-
-    local productGrant = productGrants[receiptInfo.ProductId]
-    if not productGrant then
-        warn("Unhandled product", receiptInfo.ProductId)
-        return Enum.ProductPurchaseDecision.NotProcessedYet
-    end
-
-    local transactionId = tostring(receiptInfo.PurchaseId)
-    local granted = ReceiptStore:ApplyGrantOnce(
-        transactionId,
-        player.UserId,
-        productGrant
-    )
-    if not granted then
-        return Enum.ProductPurchaseDecision.NotProcessedYet
-    end
-    return Enum.ProductPurchaseDecision.PurchaseGranted
-end
+return Products
 ```
 
-`ApplyGrantOnce` is a project-specific persistence boundary. It must make the
-transaction ID and entitlement mutation one durable, idempotent operation, and
-must treat an already-granted ID as success. Do not implement it as "grant,
-then separately record": a crash or failed record between those operations can
-duplicate value on retry.
+Preserve existing handlers when adding entries. Prices/product IDs come from
+trusted configuration and platform data, not client arguments. Prompt from the
+screen/controller with PromptProductPurchase; do not turn its completion event
+into a grant signal.
 
-Cross-owner atomicity: atomic receipt recording for one profile is not an atomic exchange between two profiles; for trading or gifting across profiles, see `roblox-data` full reference, section Cross-owner atomicity limits.
+## 4. Grant and durability contract
 
-## 3a. Receipt failure tests
+Grants must not yield, prompt, wait on a client, or call WaitForSave themselves.
+The owner records the receipt immediately after the callback returns, allowing
+reward and receipt to be saved together. No-yield code alone is insufficient:
+a callback that mutates and then throws/returns false can leave a reward without
+the ledger entry. Validate everything before mutation, keep commit paths narrow,
+and avoid additional fallible steps after applying the reward.
 
-For every receipt implementation, force these cases in a test place:
+AdjustCash mutates before requesting a save. Audit failure semantics when writing
+multi-step or custom rewards; do not assume false means no state was changed.
+For more complex grants, define an atomic in-memory commit or rollback plan
+within the canonical data owner before using the existing callback contract.
 
-- the player is absent;
-- the product is unknown or its handler is missing;
-- the grant succeeds but recording the transaction fails;
-- the same transaction is delivered twice;
-- the server shuts down between grant and acknowledgement.
+RequestSave is not an acknowledgement. The receipt owner uses WaitForSave to
+check LastSavedData for the purchase ID. A failure/timeout remains pending and
+must not trigger a fresh unrelated grant. Do not promise exactly-once behavior
+solely because the callback exists. Simulate interruptions and verify recovery.
 
-Receipt failures can be silent in normal play: the player paid and nothing arrived. Treat the durable idempotency record as load-bearing. Do not acknowledge an unknown product or a grant that was not durably recorded, and verify duplicate delivery returns success without granting twice.
+## Bounded ledger and unsupported reward shapes
 
-## 4. Subscriptions and recurring benefits
+The snapshot retains the newest 100 receipt IDs. An older pruned ID is no longer
+deduplicated by this ledger. Larger/permanent retention is a deliberate data
+design change, not a guarantee supplied by the template. Test replay around
+pruning and decide whether the reward type requires stronger retention.
 
-Subscriptions need explicit entitlement checks and renewal handling. Keep these separate from one-time Game Pass ownership. A subscription benefit should have:
+The flow protects one player's profile-backed reward and receipt record. Gifts
+to other profiles, global events, spawned world rewards, and external effects
+cannot be made atomic merely by recording a buyer's receipt. They need durable
+operation records, idempotent consumers, and a recovery owner. Explain those
+limitations before implementing such a requested reward.
 
-- a server-side entitlement check;
-- a clear expiration or renewal state;
-- behavior when the subscription API is unavailable;
-- a downgrade path that does not delete unrelated player data;
-- UI that describes the actual cadence and benefit.
+## Passes, subscriptions, and eligibility
 
-Use the current subscription documentation for API names and platform eligibility. Do not hard-code assumptions about age, region, or payment availability.
+Game passes are durable entitlements, not developer-product receipts. Check
+UserOwnsGamePassAsync server-side, handle failure, refresh ownership after a
+purchase, and expire per-player caches when appropriate. Clients may display
+an offer but do not decide eligibility or unlock privileges.
 
-## 5. Private servers and paid access
+For subscriptions, paid random items, regional restrictions, and platform
+programs, inspect current official APIs/policies at implementation time. Do not
+apply stale prices, quota formulas, or geographic assumptions from a general
+example. Keep policy checks narrowly on the affected purchase path; preserve
+unrelated gameplay. Creator/platform rewards are not game receipt grants.
 
-Private-server prompts, paid access, and item purchases solve different problems. Decide whether the player is buying access, a server instance, or an in-game entitlement. Keep access enforcement on the server and test owners, invited players, and expired or unavailable configurations.
+## Verification
 
-## 6. Policy and presentation
+Test duplicate receipts, player absent, profile unavailable, callback false/error,
+partial mutation, player leaving during save, durable acknowledgement failure,
+shutdown, ledger pruning, and unknown products. Check there is one receipt owner
+and that product rewards reach the owner's Replica/UI. Use isolated test products
+and data; `roblox-data` defines the persistence boundary.
 
-Eligibility-sensitive products may require `PolicyService` checks. Treat a failed policy lookup conservatively for the affected feature, and update the implementation when Roblox changes the documented requirements.
+## Provenance
 
-Purchase UI should make the price, cadence, contents, and meaningful restrictions clear. For randomized paid content, the current policy documentation requires outcome and numerical-odds disclosure before purchase, and classifies broad item types as paid random items, including probability modifiers such as luck boosts and pity systems. Do not rely on a color, rarity label, or marketing phrase as a substitute for a required disclosure.
-
-When `ArePaidRandomItemsRestricted` is true for a user, Roblox lists several treatments: an unpaid earnable path to the item, a disclosed non-random sequence, guaranteed direct purchase of specific outcomes, hiding the paid-random feature, blocking that purchase with a message, or removing the user from the affected part of the game. Present the options and their trade-offs instead of defaulting to the most disruptive one. Do not unilaterally hide or remove a feature when a less disruptive documented option fits the game.
-
-If the restriction applies, odds disclosure alone is not one of the listed treatments. Ask which documented option suits the game. If the requested purchase flow conflicts with the restriction, explain that once and keep working on unaffected parts; do not silently disable the feature or treat an unverified policy check as a pass.
-
-Platform program names and payout rules change. Engagement-Based Payouts is historical/deprecated material, not a current implementation target; consult the current Creator Rewards documentation when working on platform payouts.
-
-## 7. Creator Rewards
-
-Creator Rewards is a platform program rather than an in-experience purchase API. As documented on 2026-07-13, it has two parts:
-
-- **Daily Engagement Rewards:** 5 Robux when an Active Spender spends at least 10 minutes in the experience during a day and the experience is one of the first three they launch that day.
-- **Audience Expansion Rewards:** a 35% revenue share on the first $100 of qualifying purchases by an attributed New User or Reactivated User during their first 60 days, subject to the experience's 10-minute, attribution, and average-100-DAU-for-60-days conditions.
-
-Creator Rewards data is surfaced in Creator Dashboard and has a 60-day holding period. There is no server callback that grants the reward to a player and no purchase receipt to process. Do not make Creator Rewards the source of truth for coins, products, or player entitlements.
-
-Treat the program terms as changeable policy. Do not automate engagement, manipulate teleports, encourage alternate accounts, or design an idle loop solely to manufacture reward activity. Review the current eligibility, anti-fraud, and DevEx terms before making a business or content decision.
-
-## 8. Economy design
-
-Monetization changes the economy even when the product is cosmetic:
-
-- faucets increase supply;
-- sinks remove supply;
-- multipliers change time-to-earn;
-- tradeable rewards can create secondary markets;
-- limited offers can concentrate demand and support load.
-
-Model the ordinary player path before choosing prices. Track purchases and grants separately so an analytics event cannot become the source of truth for inventory.
-
-## 9. Testing matrix
-
-Test in a non-production place with representative data:
-
-- prompt cancelled;
-- ownership API errors;
-- unknown product id;
-- player leaves before receipt processing;
-- receipt callback called twice;
-- grant succeeds but receipt recording fails;
-- save or shutdown begins during a grant;
-- subscription entitlement changes;
-- policy lookup denies or cannot determine eligibility.
-- Creator Rewards eligibility and dashboard reporting reviewed when the experience is relying on it.
-
-Keep test product IDs and test entitlements out of production configuration.
-
-## Monetization checklist
-
-- [ ] Prompting is client-side, granting is server-side.
-- [ ] There is one receipt callback and a product dispatch table.
-- [ ] Grants are idempotent and receipt identifiers are recorded.
-- [ ] Product configuration is trusted server data.
-- [ ] Policy and eligibility checks use current official documentation.
-- [ ] Prices, cadence, contents, and disclosures are visible before purchase.
-- [ ] Failures leave the receipt retryable instead of silently acknowledging it.
+Adapted from the supplied roblox-brain-main.zip (MIT, copyright 2026 TabooHarmony)
+and roblox-game-boilerplate-master.zip (Unlicense). Boilerplate contracts and
+examples were checked against the supplied local source on 2026-10-11; external
+engine APIs were not revalidated live during this adaptation. Selected original source
+links remain in SKILL.md as documentation pointers, not as a claim of new review.
+When the template changes, inspect the actual implementation before relying on
+these snapshot-specific paths, hooks, timeouts, and shutdown behavior.

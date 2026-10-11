@@ -26,25 +26,39 @@
 Each skill has a short entry point and a deeper reference with examples and API details.
 Start with **Core** for general development work. Add the others when the task calls for them.
 
+## Boilerplate adaptation
+
+This edition adapts 16 skills for tarellfrost/roblox-game-boilerplate: the four
+core architecture/patterns/networking/data skills, all ten gameplay skills,
+monetization, and tooling. Both entrypoints and full references were rewritten.
+The remaining 13 skills are unchanged domain guidance. Game code and authored
+Studio assets remain in the boilerplate project; this repository stays a skills
+library. Keep the game project's AGENTS.md when installing skills into it.
+
+The boilerplate owns registries/lifecycle, Wally packages, Packet actions,
+Replica state, DataService persistence, PurchaseService receipts, and
+UIController screens. These are conventions of this template, not a universal
+Roblox standard. See BOILERPLATE-INTEGRATION.md for use and validation limits.
+
 ## Install
 
 **All 29 skills:**
 
 ```bash
-npx skills add TabooHarmony/roblox-brain
+npx skills add tarellfrost/roblox-brain
 ```
 
 **One library:**
 
 ```bash
-npx skills add TabooHarmony/roblox-brain/skills/core
+npx skills add tarellfrost/roblox-brain/skills/core
 # or: gameplay, design, tools
 ```
 
 **One skill:**
 
 ```bash
-npx skills add TabooHarmony/roblox-brain --skill roblox-building
+npx skills add tarellfrost/roblox-brain --skill roblox-building
 ```
 
 Manual install: copy the **whole skill directory**, including `references/full.md`, into your agent's skills folder. For example: `cp -r skills/design/roblox-growth-design ~/.claude/skills/`. This also works with `.codex/skills/` and `.cursor/skills/`. Copying only `SKILL.md` leaves the reference missing.

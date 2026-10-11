@@ -1,200 +1,83 @@
-# Roblox Localization: Full Reference
+# Boilerplate Localization: Full Reference
 
-> **Code in this reference is illustrative. Adapt to your game and verify in Studio before production use.**
+## Project priority and scope
 
-## LocalizationService
+These skills target tarellfrost/roblox-game-boilerplate as supplied in the
+master ZIP. Follow explicit user choices and the project's current AGENTS.md;
+then use its existing source, registries, manifests, and module contracts to
+resolve implementation details. This is a project convention, not a claim that
+every Roblox game must use this architecture. In another project, confirm the
+architecture before applying boilerplate-specific paths or APIs.
 
-### Overview
+Code is authored on disk under src/server, src/client, and src/shared and synced
+with Rojo. Studio owns the authored place, geometry, Lighting, and StarterGui.
+Mapped modules live directly under Roblox service roots; there are no additional
+Server, Client, or Shared wrapper folders in Studio. Keep --!strict, PascalCase
+public APIs, camelCase locals, and the repository's StyLua settings. Code examples
+below are illustrative integration examples; verify them in the target project
+with scripts/check.ps1 and a feature-appropriate Studio playtest. Only directives
+such as --!strict belong in generated code comments under the supplied policy.
 
-LocalizationService handles automated translation in Roblox. It stores LocalizationTable objects and provides methods for locale detection, translator creation, and country/region lookup.
+## Ownership and implementation
 
-### Properties
+Keep authored translation tables and localizable UI in Studio/platform tooling
+and save the place. Screen modules remain under UIController; do not add a
+separate LocalScript per label. Stable translation keys belong in the existing
+screen's configuration or a shared Config module when several screens use them.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `RobloxLocaleId` | string | Locale for core/internal features (e.g. `en-us`) |
-| `SystemLocaleId` | string | Player's OS locale |
+Use automatic localization for authored GUI where it fits. For formatted or
+dynamic messages, obtain a translator asynchronously with explicit failure
+handling and fallback source text. Cache within the appropriate player/screen
+lifetime; do not yield in a controller's Init/Start. Guard completion so a late
+translator result cannot update a destroyed screen.
 
-### Methods
+If translation is shared across screens, a LocalizationController can expose
+the project's translation operation and readiness signal through the registry.
+If only one screen needs it, keep a child module instead. Use the existing
+Signal/Trove packages for readiness subscriptions and cleanup. Do not invent
+an engine method for locale refresh; inspect the current installed API.
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `GetTranslatorForPlayerAsync(player)` | `Translator` | Get translator for player's locale |
-| `GetTranslatorForLocaleAsync(localeId)` | `Translator` | Get translator for a specific locale |
-| `GetCountryRegionForPlayerAsync(player)` | `string` | Country/region code from IP geolocation |
-| `GetCorescriptLocalizations()` | `Instances` | LocalizationTables for core scripts |
+Format dynamic values through defined translation entries rather than joining
+English fragments. Check source/fallback text, placeholders, pluralization
+requirements, long translations, wrapping, scrolling, and gamepad navigation.
+DataController supplies confirmed values to display; localization never mutates
+the client's replicated profile. Persisted language preferences require server
+validation and DataService, not an independent save system.
 
-## LocalizationTable
+Locale is not a trustworthy country or purchase eligibility proof. If a requested
+feature needs platform region/policy APIs, check current official contracts,
+handle failure, and keep the decision in a server owner. Do not derive Roblox
+product prices from an IP-country example or treat client locale as entitlement.
+Avoid logging personal region information unless required by the feature.
 
-### Overview
+Test initial translator delay/failure, missing keys, changing displayed values,
+repeated screen open/close, character respawn, destruction before completion,
+and representative short/long/non-Latin translations. The module implementation
+and actual authored table entries must both exist before claiming localization
+is finished.
 
-LocalizationTable stores translation entries. Each entry maps a source string to translations in multiple locales.
+## Integration sequence
 
-### Structure
+1. Inspect the current place/assets and existing feature owners; extend one when it already owns the concern.
+2. Select a service, controller, component, or pure child using the ownership rules above.
+3. Add only the required registry/factory/screen entries. Put client-sendable channels in shared/Packets.luau with rate limits.
+4. Connect and schedule during Start; keep Init and feature requires free of yielding work and runtime side effects.
+5. Track instances, events, tasks, tweens, and context restoration under their actual lifetimes.
+6. Run scripts/check.ps1 for code changes and the boundary-specific playtest described above. Save authored place changes.
 
-Each entry in a LocalizationTable has:
-- `Key`: unique identifier (optional, can use source text as key)
-- `Source`: the original text string
-- `Context`: optional context string for disambiguation
-- `Example`: optional example with argument placeholders
-- Locale columns: `en-us`, `pt-br`, `ja-jp`, `es-es`, etc.
+## Related contracts
 
-### Setup
+Use `roblox-architecture` for system/child boundaries, `roblox-luau-patterns` for
+resource ownership, `roblox-networking` for Packet validation, `roblox-data` for
+profile mutations, and `roblox-gui` for screens. These do not authorize replacing
+the project's chosen framework or making unrelated game-design decisions.
 
-```luau
--- Create a LocalizationTable
-local locTable = Instance.new("LocalizationTable")
-locTable.Name = "GameTranslations"
-locTable.Parent = game:GetService("LocalizationService")
+## Provenance
 
--- Add entries programmatically (rare; usually done via CSV import in Studio)
-locTable:SetEntries({
-    {
-        Key = "welcome",
-        Source = "Welcome to the game!",
-        Values = {
-            ["en-us"] = "Welcome to the game!",
-            ["pt-br"] = "Bem-vindo ao jogo!",
-            ["ja-jp"] = "ゲームへようこそ！",
-            ["es-es"] = "¡Bienvenido al juego!",
-        },
-    },
-    {
-        Key = "coins_count",
-        Source = "You have {0} coins",
-        Example = "You have 100 coins",
-        Values = {
-            ["en-us"] = "You have {0} coins",
-            ["pt-br"] = "Você tem {0} moedas",
-            ["ja-jp"] = "{0}コイン持っています",
-        },
-    },
-})
-```
-
-## Auto-Translation (GUI)
-
-### How It Works
-
-1. Keep `AutoLocalize` true on the GUI object and every `GuiBase2d` ancestor
-2. Set `RootLocalizationTable` on a GUI object (or an ancestor)
-3. When `TextLabel.Text` is set, the engine looks up the source text in the table
-4. If a translation exists for the player's locale, it replaces the displayed text
-5. If no translation exists, the source text is shown
-
-```luau
--- Set up auto-translation on a ScreenGui
-local screenGui = player.PlayerGui:WaitForChild("MainMenu")
-local locTable = game.LocalizationService:WaitForChild("GameTranslations")
-screenGui.AutoLocalize = true
-screenGui.RootLocalizationTable = locTable
-
--- Text auto-translates based on player's locale
-local welcomeLabel = screenGui:WaitForChild("WelcomeLabel")
-welcomeLabel.Text = "Welcome to the game!" -- engine replaces with translation
-```
-
-### Scope
-- Auto-translation ONLY works on `GuiBase2d` descendants (TextLabel, TextButton, Frame, etc.)
-- Does NOT work on chat messages, toasts, or any non-GUI text
-- For non-GUI text, use manual `Translator:Translate()`
-
-## Manual Translation
-
-### Getting a Translator
-
-```luau
-local LocalizationService = game:GetService("LocalizationService")
-
--- For the local player (client-side)
-local translator = LocalizationService:GetTranslatorForPlayerAsync(game.Players.LocalPlayer)
-
--- For a specific locale
-local translator = LocalizationService:GetTranslatorForLocaleAsync("pt-br")
-```
-
-### Translating Strings
-
-```luau
--- Simple translation
-local welcome = translator:Translate(game, "Welcome to the game!")
-
--- With format arguments
-local coinsMsg = translator:FormatByKey("coins_count", {coinCount})
-
--- Using a specific LocalizationTable (not the default hierarchy)
-local customTable = game.LocalizationService:WaitForChild("QuestTranslations")
-local questName = translator:Translate(customTable, "Dragon Slayer Quest")
-```
-
-## Country/Region Detection
-
-### Use Cases
-- Region-specific pricing (USD vs BRL vs JPY)
-- Compliance (age ratings, content restrictions by country)
-- Region-locked events or features
-
-```luau
--- Server-side country detection
-game.Players.PlayerAdded:Connect(function(player)
-    local success, country = pcall(function()
-        return game:GetService("LocalizationService"):GetCountryRegionForPlayerAsync(player)
-    end)
-    if success then
-        print(player.Name .. " is from " .. country)
-        if country == "US" then
-            -- show USD pricing
-        elseif country == "BR" then
-            -- show BRL pricing
-        end
-    end
-end)
-```
-
-### Key Rules
-- `GetCountryRegionForPlayerAsync` is async and can fail, so always pcall
-- Uses IP geolocation, so VPNs/proxies give wrong results
-- Returns ISO 3166-1 alpha-2 country codes (US, GB, JP, BR, etc.)
-
-## Locale List
-
-Common Roblox-supported locales:
-
-| Code | Language |
-|------|----------|
-| `en-us` | English (US) |
-| `en-gb` | English (UK) |
-| `pt-br` | Portuguese (Brazil) |
-| `es-es` | Spanish (Spain) |
-| `es-mx` | Spanish (Mexico) |
-| `ja-jp` | Japanese |
-| `ko-kr` | Korean |
-| `zh-cn` | Chinese (Simplified) |
-| `zh-tw` | Chinese (Traditional) |
-| `fr-fr` | French |
-| `de-de` | German |
-| `it-it` | Italian |
-| `ru-ru` | Russian |
-| `tr-tr` | Turkish |
-| `id-id` | Indonesian |
-| `th-th` | Thai |
-| `vi-vn` | Vietnamese |
-
-Check `player.LocaleId` against this list to determine which translations to provide.
-
-## Workflow
-
-1. **Extract strings**: Use Studio's Localization Tools plugin to auto-extract GUI text into a LocalizationTable
-2. **Export CSV**: Export the table as CSV for translators
-3. **Import CSV**: Import translated CSV back into the LocalizationTable
-4. **Test**: Use Studio's locale simulator to preview different locales
-5. **Ship**: Parent LocalizationTable under LocalizationService, set RootLocalizationTable on GUIs
-
-## Pitfalls
-
-- **Missing translations**: fall back to source text silently. Log missing keys during development.
-- **Non-GUI text**: auto-translation doesn't work on chat messages, notifications, or any non-GuiBase2d element. Use `Translator:Translate()` manually.
-- **Async calls**: `GetTranslatorForPlayerAsync` and `GetCountryRegionForPlayerAsync` are async; cache results, don't call per-frame.
-- **VPN/proxy**: country detection via IP is unreliable behind VPNs. Don't use for security-critical decisions.
-- **Argument formatting**: use `{0}`, `{1}` placeholders in source text. `FormatByKey` replaces them in order.
-- **Locale coverage**: not all locales are supported. Check `player.LocaleId` and handle unsupported locales gracefully.
+Adapted from the supplied roblox-brain-main.zip (MIT, copyright 2026 TabooHarmony)
+and roblox-game-boilerplate-master.zip (Unlicense). Boilerplate contracts and
+examples were checked against the supplied local source on 2026-10-11; external
+engine APIs were not revalidated live during this adaptation. Selected original source
+links remain in SKILL.md as documentation pointers, not as a claim of new review.
+When the template changes, inspect the actual implementation before relying on
+these snapshot-specific paths, hooks, timeouts, and shutdown behavior.

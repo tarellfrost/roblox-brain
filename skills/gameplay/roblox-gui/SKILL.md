@@ -1,53 +1,32 @@
 ---
 name: roblox-gui
-description: "Use when building Roblox menus, HUDs, shops, notifications, dialogs, or responsive cross-platform UI."
+description: "Use for Studio-authored Roblox UI, UIController screen modules, reactive DataController views, and cross-platform layout."
 last_reviewed: 2026-10-02
 sources:
   - https://create.roblox.com/docs/ui
   - https://create.roblox.com/docs/ui/position-and-size
   - https://create.roblox.com/docs/ui/styling
-  - https://create.roblox.com/docs/ui/list-flex-layouts
-  - https://create.roblox.com/docs/input
-  - https://create.roblox.com/docs/reference/engine/classes/GuiService
-  - https://create.roblox.com/docs/reference/engine/classes/GuiObject
-  - https://create.roblox.com/docs/reference/engine/classes/ScreenGui
-  - https://create.roblox.com/docs/projects/server-authority
-  - https://create.roblox.com/docs/input/input-action-system
-  - https://create.roblox.com/docs/reference/engine/classes/ReplicatedFirst
-  - https://create.roblox.com/docs/reference/engine/classes/ContentProvider
-  - https://create.roblox.com/docs/reference/engine/classes/UIPageLayout
-  - https://create.roblox.com/docs/reference/engine/classes/SelectionBox
-  - https://create.roblox.com/docs/reference/engine/classes/Decal
-  - https://create.roblox.com/docs/reference/engine/classes/VideoPlayer
-  - https://raw.githubusercontent.com/Roblox/focus-navigation/main/README.md
-  - https://devforum.roblox.com/t/introducing-improvements-to-directional-ui-selection-on-gamepad/3864317
-  - https://devforum.roblox.com/t/what-are-the-best-ui-screeninset-settings-for-buttons/3519333
-  - https://devforum.roblox.com/t/screenguiscreeninsets-topbarinsets-regression/4047230
-  - https://raw.githubusercontent.com/Roblox/react-luau/main/README.md
-  - https://raw.githubusercontent.com/dphfox/Fusion/main/README.md
-  - https://raw.githubusercontent.com/centau/vide/main/README.md
-  - https://raw.githubusercontent.com/ffrostfall/fluid/main/README.md
   - original
+  - https://raw.githubusercontent.com/tarellfrost/roblox-game-boilerplate/master/AGENTS.md
 ---
 
-# roblox gui
+# Boilerplate UI Screens
 
 ## When to Load
 
-Load for HUDs, menus, shops, dialogs, notifications, or world-space UI.
+Load for this domain in a game based on tarellfrost/roblox-game-boilerplate.
+Explicit user choices and the current project AGENTS.md take precedence; use
+the supplied architecture rather than general-purpose examples from another framework.
 
 ## Quick Reference
 
-- `ScreenGui` overlays; `SurfaceGui` on surfaces; `BillboardGui` for world labels.
-- Let layouts and constraints own repeated layout; avoid per-frame pixel positioning.
-- `Scale` for responsive structure; `Offset` for padding/fixed-size details.
-- Design for touch/gamepad too. Use `ContextActionService` for gameplay bindings where appropriate.
-- Test directional focus; set `GuiService.SelectedObject` for gamepad entry.
-- Follow existing visual language and owner art direction; test UI over the game world.
-- UI displays server state; a button is not an authority boundary.
-- Reactive UI: own per-screen cleanup separately from session state; repeat open/close to test leaks (full.md).
-- Server Authority: display confirmed inventory/currency; route gameplay input through Input Actions.
-- Resolve scrolling, text growth, clipping, and safe areas before polish.
-- Loading UI belongs in `ReplicatedFirst`; client character teleports are not readiness gates.
+- Author ScreenGuis and layout in StarterGui in Studio; save the place. Rojo does not serialize this UI under the supplied mapping.
+- UIController owns all screens. Add Screens/<Name>.luau and register it in UIController/init.luau's modules table; do not add one controller per screen.
+- Screens return new(context, gui) and an object with Modal, StartsOpen, Open, Close, Destroy. Use the existing Types contract.
+- Use context.Open/Close to navigate and context.Controllers to access systems; screens never require one another.
+- Read player state through DataController:Observe and clean connections with Trove. Send intent through Packet; the server decides outcomes.
+- Find authored elements by name and check class before using them. Missing GUI disables only that screen through the existing loader.
+- Prefer layouts, constraints, readable text, safe areas, touch targets, and gamepad focus. Verify open/close and respawn behavior.
+- If Studio tooling is unavailable, finish screen-module code and report the missing authoring step. Generate UI in code only when the user chooses that approach.
 
-> Layout and lifecycle examples: [references/full.md](references/full.md)
+> Implementation contracts and examples: [references/full.md](references/full.md).

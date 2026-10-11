@@ -1,217 +1,75 @@
-# roblox animation and vfx: full reference
-
-> Code examples are illustrative. Adapt them to your project and verify in Studio before production use.
-
-Visual effects are a budgeted part of gameplay, not decoration added after performance work. Build them around an owner, a trigger, a duration, and a cleanup path.
-
-## Design an effect before wiring it
-
-Start with the gameplay signal: where is the hazard, when is contact, and what changed? Sketch the effect in phases: an optional readable warning, a fast contact shape, a brief peak, then a quieter decay. A projectile may need a travel trail and a separate impact; an environmental effect may need continuous motion and an occasional accent. Give each layer one job rather than adding emitters until the event disappears under glow. Keep the warning distinguishable from the hit, especially when timing or danger matters.
-
-Test the silhouette with sound and post-processing off. Does a player see the impact point and direction at gameplay distance, against both dark and bright backgrounds? Check that a moving slash's tapered tail trails its direction of travel instead of pointing ahead of it. Then add secondary motion (sparks, smoke, fragments or a shockwave), sound, and a small local camera response only where they clarify the event. Stagger layers deliberately so everything does not appear and vanish on the same frame. A bright fill and a darker edge can make the same shape read without stacking unrelated shapes. Make the strongest visual moment brief; reserve dense spectacle for rare events so routine actions stay legible. Reduce intensity or disable nonessential layers if the player has selected reduced motion.
-
-For a natural-looking effect, break the subject into different behaviors rather than one emitter doing everything: for example, a water impact has a surface ring, heavy upward splashes, fine droplets, then lingering mist. Give those layers different lifetimes, speeds, scale and transparency. Reuse a coherent texture/palette family and vary motion enough to avoid obvious repetition. Roblox's volcano and waterfall tutorials demonstrate this layered approach; the composition is a design choice, not a requirement to reproduce their example assets.
-
-## 1. Animation loading
-
-Use an `Animator` under the character's `Humanoid` or under an `AnimationController` for non-character rigs. Keep asset IDs in configuration and verify that the experience has permission to use them.
-
-```luau
-local function loadTrack(animator: Animator, assetId: string, priority: Enum.AnimationPriority): AnimationTrack
-    local animation = Instance.new("Animation")
-    animation.AnimationId = assetId
-    local track = animator:LoadAnimation(animation)
-    track.Priority = priority
-    return track
-end
-```
-
-Load the track when the character or prop is created, not in a hot input path. A missing or unavailable asset should leave the gameplay state valid and produce a useful warning.
-
-The helper above is a useful classic or local-presentation pattern. In a Server Authority project, do not treat an `AnimationTrack` reference as a permanent identity: rollback or resimulation can stop or replace the visible track. Store the animation ID in state and query the current animator tracks when applying changes, for example with `Animator:GetPlayingAnimationTracks()` or `Animator:GetTrackByAnimationId()`.
-
-## Server Authority animation and effects
-
-When an animation affects synchronized gameplay, mirror its control logic on the client and server in a shared module and run the synchronized part through `RunService:BindToSimulation()` (requires `Workspace.UseFixedSimulation` enabled in Studio). Keep camera, particles, sounds, and other presentation work outside the simulation callback so it can respond to the current predicted state.
-
-Predicted effects must be reversible. A client can briefly predict an impact, explosion, or sound that the server later rejects. Drive durable presentation from synchronized state or a state machine, and cancel or hide effects when rollback changes that state. Do not let a predicted effect grant damage, rewards, or other gameplay outcomes.
-
-## 2. Priorities and markers
-
-Use animation priority to define which tracks may override the same joints. Keep locomotion and action tracks separate. Use marker signals for synchronized effects instead of guessing a timestamp that changes when an animation is retuned. In Server Authority, resolve the current track after rollback rather than assuming a cached track handle still represents the visible animation.
-
-### Track control surface: Play parameters, weight, and event semantics
-
-- `track:Play(fadeTime, weight, speed)` sets the initial controls; `AdjustSpeed`/`AdjustWeight` change them mid-play. `Speed`, `WeightCurrent`, and `WeightTarget` are read-only; there is no writable `.Weight` property.
-- **Weight convergence**: weight fades toward `WeightTarget` over the fade time; `WeightCurrent` reflects the blend in progress. When a state machine must know the blend has settled, poll `math.abs(track.WeightCurrent - track.WeightTarget) < epsilon` (a small epsilon like 0.01) rather than assuming a fade is instant.
-- **`Stopped` vs `Ended`**: `Stopped` fires on natural end *and* on an explicit `Stop()` (even with a fade); `Ended` fires only after the track has fully finished affecting the pose — after any fade. Hook cleanup/destroy to `Ended`; hook gameplay chaining to `Stopped` and guard against the explicit-stop case.
-- **`DidLoop`** gives loop-count logic (play exactly N cycles) instead of wall-clock guessing against `track.Length`.
-- **Duration math**: at constant positive speed, a full forward pass lasts `track.Length / track.Speed`. `Length` is `0` until loaded; guard readiness and bound waits. Speed `0` pauses playback, so do not divide by it; reverse playback and mid-track starts need separate handling.
-- **Priority in practice**: `Core < Idle < Movement < Action < Action2 < Action3 < Action4`. For joints affected by multiple tracks, priority determines evaluation order, and tracks at the same priority blend by weight. Do not treat enum numeric values as this ordering (Core has a special value), or assume an equal-priority track blocks another regardless of weight.
-
-```luau
-local attack = loadTrack(animator, ATTACK_ID, Enum.AnimationPriority.Action)
-
-local markerConnection = attack:GetMarkerReachedSignal("Impact"):Connect(function(value)
-    Effects:PlayImpact(character, value)
-end)
-
-attack.Stopped:Once(function()
-    markerConnection:Disconnect()
-end)
-attack:Play(0.08)
-```
-
-If the animation can be stopped and restarted, make the effect trigger idempotent or clear the previous attack state before playing again.
-
-## 3. Blending
-
-Use a short fade when moving between locomotion states. Stop tracks that should no longer contribute. A track that remains playing at a low weight still consumes state and can make later debugging difficult.
-
-Keep the state machine responsible for selecting tracks. The effect system should react to a named event such as `Footstep` or `Impact`, not inspect every animation frame. Treat the contact sound and its timing as part of the same cue: a visually sharp hit with late or missing audio can feel weak. Synchronize both to the event, allow players to lower effects independently, and route sound mixing details to `roblox-audio`.
-
-## 4. Particle emitters
-
-For a continuous effect, tune `Rate`, `Lifetime`, `Speed`, `Size`, and `Color`. For a one-shot effect, keep emission manual:
-
-```luau
-local emitter = template:Clone()
-emitter.Rate = 0
-emitter.Parent = attachment
-emitter:Emit(18)
-
-task.delay(2, function()
-    if emitter.Parent then
-        emitter:Destroy()
-    end
-end)
-```
-
-Use `NumberSequence` and `ColorSequence` to move size, transparency, and color over lifetime. Keep lifetime and rate low enough that a repeated effect cannot accumulate unbounded particles. Prefer a small set of reusable templates over creating new textures and emitters for every hit.
-
-### Textures, flipbooks and non-particle effects
-
-A flipbook is one image containing frames of motion. For a native `ParticleEmitter`, set a matching `FlipbookLayout` (including `Custom` with `FlipbookSizeX`/`FlipbookSizeY` for non-square grids), then choose `FlipbookMode`: `OneShot` plays once over the particle's lifetime, while `Loop` repeats. `FlipbookStartRandom` with `FlipbookFramerate` set to zero chooses a different static frame per particle, useful for varied sparks or shards; it is not an animated flipbook. Give frames enough padding to avoid texture bleeding. Make tintable shapes with a transparent background and neutral values rather than baking a different color into every texture; test the actual `Color` sequence and blend against the scene. Verify the animation at the intended lifetime and on mobile: expensive flipbooks may be disabled on memory-constrained clients.
-
-Not every effect with a sequence of textures is a native particle flipbook. A model can hold individually textured decals, mesh frames, or UI images advanced by a separate player or plugin. Inspect its object types, animation script and asset IDs before assuming `ParticleEmitter.Flipbook*` settings will control it. An `.rbxm` may only contain templates while a place file carries the playback machinery. Treat imported effect scripts as untrusted; inspect them before running, check whether textures are owned and usable by the target experience, and recreate the idea with your own assets when reuse rights are unclear. A visual preview alone does not prove the model will play after insertion.
-
-For one-shot hit feedback, an expanding mesh ring or a short screen-space image can make the first frame readable while particles supply texture and motion afterward. Keep screen effects local, brief and optional; do not let an overlay obscure the player's next input or an enemy's telegraph. Mesh-based shockwaves and custom image players can require more scripting than a native emitter, so prefer built-in effects when they achieve the same read.
-
-## 5. Beams and trails
-
-Both effects depend on attachments. Put the attachments on stable parts, and verify their orientation and lifetime when the model is animated.
-
-```luau
-local startAttachment = source:FindFirstChild("BeamStart")
-local endAttachment = target:FindFirstChild("BeamEnd")
-if not startAttachment or not endAttachment then
-    return
-end
-
-local beam = beamTemplate:Clone()
-beam.Attachment0 = startAttachment
-beam.Attachment1 = endAttachment
-beam.Parent = source
-
-Debris:AddItem(beam, 0.35)
-```
-
-A trail records movement between its attachments. If the attachments are destroyed or teleported unexpectedly, the visual can stretch or disappear. Remove the trail with the owning projectile or character.
-
-## 6. Tweening
-
-`TweenService` is useful for UI, transparency, color, size, and camera-adjacent feedback. Keep the target properties explicit and retain the tween if you need to cancel it on a state change.
-
-```luau
-local TweenService = game:GetService("TweenService")
-local tween = TweenService:Create(
-    flashPart,
-    TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    { Transparency = 1 }
-)
-
-tween:Play()
-
--- `Completed` also fires with Enum.PlaybackState.Cancelled when the tween is
--- stopped early, including when a replacement setup cancels it. Check state
--- and ownership before destroying a target another effect may now use.
-tween.Completed:Connect(function(playbackState)
-    if playbackState ~= Enum.PlaybackState.Completed then
-        return -- cancelled: leave cleanup to the current owner
-    end
-    if flashPart.Parent then
-        flashPart:Destroy()
-    end
-end)
-```
-
-Do not start a new tween every render frame for a value that could be computed once. When a state changes quickly, cancel or replace the old tween rather than allowing several competing animations to finish.
-
-`Completed` fires for cancelled tweens too. Destroying the target on cancellation is fine when it is a genuinely disposable one-shot object that no other effect can reuse; shared, pooled, or reused targets belong to their current owner:
-
-```luau
-local puff = Instance.new("Part")
-puff.Anchored = true
-puff.Parent = workspace
-
-local puffTween = TweenService:Create(puff, TweenInfo.new(0.3), {Transparency = 1})
-puffTween.Completed:Once(function(_playbackState)
-    if puff.Parent then
-        puff:Destroy() -- one-shot part: no other effect can reuse it
-    end
-end)
-```
-
-## 7. Lighting and camera feedback
-
-Short-lived color correction, bloom, blur, or camera shake should be subtle and owned by the local player. Keep gameplay logic independent of the visual effect so a disabled effect does not change damage, movement, or reward results.
-
-For camera shake, combine small offsets around the current camera transform and decay the amplitude. Avoid permanently setting `CameraType` or replacing the camera's subject without a restoration path.
-
-## 8. Pooling and cleanup
-
-Pool effects that fire frequently, such as muzzle flashes, hit sparks, and footsteps. A pool should reset every mutable property before reuse:
-
-- parent and enabled state;
-- attachments and adornments;
-- transparency, color, and size sequences;
-- active tweens and connections;
-- expiration timestamp.
-
-Use `Debris` for a simple one-shot lifetime. Use an explicit owner object when the effect has multiple connections or must be cancelled early. For continuous emitters, disable them first, let existing particles expire, and only then remove the owner if a natural fade matters. For multi-part effects, keep the triggers and timing together; an animation file or particle model alone may not include the sequence that actually plays it.
-
-Budget the *simultaneous view*, not just each effect alone. Test several players repeating the action near the camera, and compare low- and high-quality graphics on a mobile-class device. Transparent screen coverage, overlapping layers, lights and unique animated textures can cost more than an emitter count suggests. Scale secondary layers down before sacrificing the primary contact cue. A showcase full of emitters is not a performance target.
-
-## 9. Legacy effect classes: Sparkles (and Fire, Smoke)
-
-`Sparkles` is a minimal particle emitter: parent to a `BasePart` or an `Attachment` in one. It has essentially three knobs (`Enabled`, `SparkleColor`, `Color`) and no lifetime, texture, rate, or `Emit()` control. Use it for quick placeholder effects only; any real effect should be a `ParticleEmitter`.
-
-Two behaviors matter:
-
-- Setting `Enabled = false` stops new emission, but existing particles render until their lifetime expires. Destroying the object (`Parent = nil` or `:Destroy()`) kills all particles instantly. To stop cleanly, disable first, then `Debris:AddItem(sparkles, a few seconds)`.
-- Particles emit from the center of the parent part. Parent to an `Attachment` when the start position matters.
-
-`Fire` and `Smoke` are the same story: fixed look, few knobs, superseded by `ParticleEmitter` for anything custom.
-
-## 10. Preloading and runtime failure
-
-Preload only the assets needed for an imminent experience state. Preloading an entire catalog increases memory pressure and still does not make an unavailable asset valid. Show a fallback when an animation, image, sound, or particle texture cannot load.
-
-## 11. Review checklist
-
-- [ ] Every animation uses an `Animator` and a verified asset ID.
-- [ ] Track priority and stopping behavior are intentional.
-- [ ] Markers or named gameplay events drive synchronized effects.
-- [ ] Bursts have bounded count and lifetime; texture/flipbook layouts match their source images.
-- [ ] The main silhouette and travel direction read before secondary layers, and contact VFX/SFX land together.
-- [ ] Custom mesh, decal, or UI sequences have the player and asset permissions they need; imported scripts were inspected.
-- [ ] Beam and trail attachments survive for the effect's lifetime.
-- [ ] Tweens are replaced or cancelled when state changes.
-- [ ] `Completed` handlers check `PlaybackState` and effect ownership before destroying shared or pooled instances.
-- [ ] Temporary instances, connections, and tasks have an owner.
-- [ ] Effects are tested on the target device class and in a real playtest.
-
-## Community ecosystem (leads, not sources)
-
-- [How to animate Tool Parts](https://devforum.roblox.com/t/how-to-animate-tool-parts-guns-knifes-etc/359484) (3.1k likes) and [Jespone's guide to animations](https://devforum.roblox.com/t/jespones-guide-to-animations/225752): the tool-animation canon; [Blender rig exporter](https://devforum.roblox.com/t/blender-rig-exporteranimation-importer/34729) for the art pipeline.
-- VFX: [Hidden glass distortion w/ real-time reflections](https://devforum.roblox.com/t/hidden-glass-distortion-effect-with-real-time-reflections-tutorial/2338789); [Wind Shake](https://devforum.roblox.com/t/wind-shake-high-performance-wind-effect-for-leaves-and-foliage/1039806) foliage motion; [Realism pack](https://devforum.roblox.com/t/realism-%E2%80%94-make-your-games-feel-more-immersive/898642) (1.8k likes).
+# Boilerplate Animation and VFX: Full Reference
+
+## Project priority and scope
+
+These skills target tarellfrost/roblox-game-boilerplate as supplied in the
+master ZIP. Follow explicit user choices and the project's current AGENTS.md;
+then use its existing source, registries, manifests, and module contracts to
+resolve implementation details. This is a project convention, not a claim that
+every Roblox game must use this architecture. In another project, confirm the
+architecture before applying boilerplate-specific paths or APIs.
+
+Code is authored on disk under src/server, src/client, and src/shared and synced
+with Rojo. Studio owns the authored place, geometry, Lighting, and StarterGui.
+Mapped modules live directly under Roblox service roots; there are no additional
+Server, Client, or Shared wrapper folders in Studio. Keep --!strict, PascalCase
+public APIs, camelCase locals, and the repository's StyLua settings. Code examples
+below are illustrative integration examples; verify them in the target project
+with scripts/check.ps1 and a feature-appropriate Studio playtest. Only directives
+such as --!strict belong in generated code comments under the supplied policy.
+
+## Ownership and implementation
+
+Put game-wide client effects in an existing controller or EffectsController;
+put animation behavior tied to a tagged instance in a Component factory. Combat
+services own hit decisions and damage. Packet notifications trigger cosmetic
+feedback; client animation markers never grant damage or persistent rewards.
+
+Store track/effect resources under a character, component, or effect-lifetime
+owner. Load animations through the rig's Animator, choose priorities deliberately,
+and reconnect for a replacement character. Track marker connections and transient
+attachments/instances in Trove; stop tracks and cancel tweens when their owner
+ends. Do not keep old character tracks after respawn.
+
+Use burst emitters, bounded lifetime, and pooling only when frequent allocation
+shows a measured cost. Attachments define beam/trail endpoints; release both
+generated endpoints and effects. Screen fades belong to a UIController screen;
+camera shake is an operation on the camera owner, not another writer competing
+for CurrentCamera.
+
+Design warning, impact, and fade so gameplay remains readable. Preload critical
+assets in owned asynchronous work and handle invalid/inaccessible assets without
+blocking Start. An effect that never finishes needs a fallback timeout as well
+as a completion event. Predicted effects must be reversible on rejection; if
+the game explicitly uses rollback simulation, verify its animation APIs instead
+of assuming ordinary cached-track behavior applies.
+
+Test respawn, missing assets, interrupted playback, repeated impacts, streaming
+removal, and teardown. Profile particle overdraw, lights, and allocations on the
+target device. The server owns outcomes even if an effect looks successful.
+
+## Integration sequence
+
+1. Inspect the current place/assets and existing feature owners; extend one when it already owns the concern.
+2. Select a service, controller, component, or pure child using the ownership rules above.
+3. Add only the required registry/factory/screen entries. Put client-sendable channels in shared/Packets.luau with rate limits.
+4. Connect and schedule during Start; keep Init and feature requires free of yielding work and runtime side effects.
+5. Track instances, events, tasks, tweens, and context restoration under their actual lifetimes.
+6. Run scripts/check.ps1 for code changes and the boundary-specific playtest described above. Save authored place changes.
+
+## Related contracts
+
+Use `roblox-architecture` for system/child boundaries, `roblox-luau-patterns` for
+resource ownership, `roblox-networking` for Packet validation, `roblox-data` for
+profile mutations, and `roblox-gui` for screens. These do not authorize replacing
+the project's chosen framework or making unrelated game-design decisions.
+
+## Provenance
+
+Adapted from the supplied roblox-brain-main.zip (MIT, copyright 2026 TabooHarmony)
+and roblox-game-boilerplate-master.zip (Unlicense). Boilerplate contracts and
+examples were checked against the supplied local source on 2026-10-11; external
+engine APIs were not revalidated live during this adaptation. Selected original source
+links remain in SKILL.md as documentation pointers, not as a claim of new review.
+When the template changes, inspect the actual implementation before relying on
+these snapshot-specific paths, hooks, timeouts, and shutdown behavior.

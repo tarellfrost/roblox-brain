@@ -1,53 +1,31 @@
 ---
 name: roblox-audio
-description: "Use when implementing Roblox audio playback, spatial sound, music, sound effects, SoundGroups, or dynamic audio effects."
+description: "Use for Roblox audio implemented through the boilerplate services, controllers, components, and Studio assets."
 last_reviewed: 2026-07-26
 sources:
   - https://create.roblox.com/docs/reference/engine/classes/SoundService
   - https://create.roblox.com/docs/audio/objects
   - https://create.roblox.com/docs/audio/effects
-  - https://create.roblox.com/docs/sound/groups
-  - https://create.roblox.com/docs/sound/dynamic-effects
+  - original
+  - https://raw.githubusercontent.com/tarellfrost/roblox-game-boilerplate/master/AGENTS.md
 ---
 
-# Roblox Audio
+# Boilerplate Audio
 
 ## When to Load
 
-Load when implementing audio playback, spatial/3D sound, background music, sound effects, audio mixing (SoundGroups), or dynamic effects. Covers both legacy Sound objects and the newer modular AudioPlayer/Wire system.
+Load for this domain in a game based on tarellfrost/roblox-game-boilerplate.
+Explicit user choices and the current project AGENTS.md take precedence; use
+the supplied architecture rather than general-purpose examples from another framework.
 
 ## Quick Reference
 
-**Two Systems**: Legacy (`Sound`/`SoundGroup`/`SoundEffect`): simpler. New modular (`AudioPlayer`/`AudioEmitter`/`Wire`/`AudioDeviceOutput`): preferred for new projects, required for voice chat.
+- Client AudioController or emitter Component; Packet carries server-approved shared cues.
+- Follow src/server, src/client, and src/shared mappings; gameplay code is ModuleScripts loaded by the existing Bootstraps.
+- Register a new system explicitly in Registry.luau; register Component factories in the existing loader. Do not add standalone feature Scripts.
+- Init captures dependencies and state; Start connects/schedules; Destroy or component Stop releases resources. Pure children have no lifecycle hooks.
+- Use existing Trove, Signal, Input, Packet, and DataService APIs when the feature crosses those boundaries.
+- Keep static assets in Studio and save the place. Runtime objects have a cleanup owner; client presentation never decides grants or damage.
+- Verify the actual engine/package API before implementing unfamiliar methods. Check disk code and Studio runtime together.
 
-**Sound Placement**: BasePart child → volumetric. Attachment/MeshPart → point source. SoundService/Workspace → global (BGM/UI).
-
-**Legacy Setup**:
-```luau
-local s = Instance.new("Sound")
-s.SoundId = "rbxassetid://ID"; s.Looped = true; s.Volume = 0.25
-s.RollOffMode = Enum.RollOffMode.InverseTapered
-s.RollOffMinDistance = 10; s.RollOffMaxDistance = 100
-s.Parent = SoundService; s:Play()
-```
-
-**SoundGroups** (mixer): Nest `SoundGroup` under Master for player-adjustable Music vs SFX volume. `bgMusic.SoundGroup = musicGroup`. Effects (`ReverbSoundEffect`, `EqualizerSoundEffect`, `CompressorSoundEffect`, etc.) parent to Sound/SoundGroup. Ducking: `CompressorSoundEffect` with `SideChain = sfxGroup` on music.
-
-**New Modular**: 2D: `AudioPlayer → Wire → AudioDeviceOutput`. 3D: `AudioPlayer → Wire → AudioEmitter` (on Part). Studio/plugin-only `SoundService.DefaultListenerLocation` controls the default listener; wire an explicit `AudioListener` for runtime control.
-
-**One-Shot SFX**:
-```luau
-local function playSFX(parent, id)
-    local s = Instance.new("Sound"); s.SoundId = id
-    s.RollOffMode = Enum.RollOffMode.InverseTapered
-    s.RollOffMinDistance = 10; s.RollOffMaxDistance = 80
-    s.Parent = parent; s:Play()
-    s.Ended:Once(function() s:Destroy() end)
-end
-```
-
-**Preload**: `ContentProvider:PreloadAsync({sound1, sound2})`. **Client SFX**: `FireClient` → `OnClientEvent` creates invisible Part + `playSFX`.
-
-**Pitfalls**: Server sounds have latency → play feedback on client. Default `RollOffMaxDistance`=10000 studs → set explicitly. Volume > 1 clips. Rapid-fire → check `IsPlaying`. Always `Destroy()` one-shots after `Ended`.
-
-See `references/full.md` for detailed examples, effect table, and client-side patterns.
+> Implementation contracts and examples: [references/full.md](references/full.md).

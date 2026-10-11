@@ -1,57 +1,33 @@
 ---
 name: roblox-input
-description: "Use when handling Roblox keyboard, mouse, gamepad, touch, motion input, or cross-platform action binding."
+description: "Use for Roblox controller-owned keyboard, mouse, gamepad, touch, and Input-package integration with cross-platform actions."
 last_reviewed: 2026-10-02
 sources:
   - https://devforum.roblox.com/t/the-correct-way-to-design-mobile-buttons/2494558
   - https://create.roblox.com/docs/reference/engine/classes/UserInputService
   - https://create.roblox.com/docs/projects/server-authority
-  - https://create.roblox.com/docs/ui/3D-drag-detectors
-  - https://create.roblox.com/docs/ui/ui-drag-detectors
+  - original
+  - https://raw.githubusercontent.com/tarellfrost/roblox-game-boilerplate/master/AGENTS.md
 ---
 
-# Roblox Input
+# Boilerplate Input Ownership
 
 ## When to Load
 
-Load for keyboard, mouse, gamepad, touch, motion, or cross-platform action binding. Client-side only. For simulation-affecting input in a Server Authority project, use the Input Action System rather than traditional input events.
+Load for this domain in a game based on tarellfrost/roblox-game-boilerplate.
+Explicit user choices and the current project AGENTS.md take precedence; use
+the supplied architecture rather than general-purpose examples from another framework.
 
 ## Quick Reference
 
-**Core events** (`UserInputService`): `InputBegan`, `InputChanged`, `InputEnded` fire as `(input: InputObject, gameProcessedEvent: boolean)`. `InputBegan` does NOT fire for mouse wheel. Events only fire while the client window is focused.
+- Keep gameplay input client-side in the owning controller. UI interactions belong to UIController screens; the server validates outcomes.
+- Prefer the installed Input package for device abstractions: Keyboard, Mouse, Gamepad, Touch, and PreferredInput.observe.
+- Create device objects and subscriptions in Start; destroy them in Destroy. Confirm the installed version's methods before writing event bindings.
+- Use ContextActionService where action priority/context handling is needed; bind in Start or context entry and unbind on exit and Destroy.
+- Route intent through Packet. Do not send client-computed rewards, prices, damage, or authoritative state.
+- Screen actions call controllers through context.Controllers; controllers use their captured registry.
+- Prevent gameplay input while a relevant modal/text-entry context owns it. Clear held/touch state on focus loss, context exit, or respawn.
+- Author mobile controls in Studio and adapt them to preferred input rather than TouchEnabled alone.
+- Engine synchronized simulation input is a separate, explicitly selected authority-mode integration; the template does not enable it automatically.
 
-**Prefer `ContextActionService` over `InputBegan`** for gameplay: free conflict resolution (chat won't steal H) and free mobile buttons:
-
-```luau
-local CAS = game:GetService("ContextActionService")
-
-local function onAction(name, state, _input)
-    if name == "Jump" and state == Enum.UserInputState.Begin then
-        humanoid.Jump = true
-    end
-end
-
-CAS:BindAction("Jump", onAction, true,
-    Enum.KeyCode.Space, Enum.KeyCode.ButtonA)
-```
-
-`BindAction(name, handler, createTouchButton, ...inputTypes)`. Handler returns `ContextActionResult.Sink` to consume, `.Pass` to fall through.
-
-**Server Authority:** use `InputAction`/`InputContext` for inputs that affect the core simulation, store the input state where the synchronized simulation can read it, and process it through `RunService:BindToSimulation()` (requires `Workspace.UseFixedSimulation` enabled in Studio). `ContextActionService` remains appropriate for UI-only or classic-project actions.
-
-**Gamepad UI focus:** separate gameplay bindings from menu selection. Set `GuiService.SelectedObject`, mark controls `Selectable`, and test nested/modal navigation.
-
-**Gamepad:** use `GetConnectedGamepads()` and listen to connection changes.
-
-**Touch:** use high-level gesture events or raw `TouchStarted`/`TouchMoved`/`TouchEnded` when tracking fingers.
-
-**Dragging:** `DragDetector` (3D parts/models, physics-capable) and `UIDragDetector` (UI) make objects draggable with zero code; events `DragStart`/`DragContinue`/`DragEnd`.
-
-**Pitfalls**:
-- `gameProcessedEvent=true` in InputBegan → UI consumed it. Filter for gameplay.
-- `BindAction` is stack-based: most-recent wins. Use `BindActionAtPriority`.
-- Client-only. Server scripts silently no-op.
-- `JumpRequest` fires multiple times per jump; debounce.
-- Mouse wheel only fires `InputChanged`.
-
-Full event tables and polling methods: `references/full.md`.
+> Implementation contracts and examples: [references/full.md](references/full.md).

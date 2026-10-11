@@ -1,45 +1,30 @@
 ---
 name: roblox-physics
-description: "Use when building Roblox vehicles, ragdolls, projectiles, elevators, constraints, forces, or other physics-driven gameplay."
+description: "Use for Roblox physics and constraints implemented through the boilerplate services, controllers, components, and Studio assets."
 last_reviewed: 2026-10-02
 sources:
   - https://devforum.roblox.com/t/cframe-operations-for-the-rest-of-us/3546477
   - https://raw.githubusercontent.com/Roblox/creator-docs/main/content/en-us/physics/mechanical-constraints.md
+  - original
+  - https://raw.githubusercontent.com/tarellfrost/roblox-game-boilerplate/master/AGENTS.md
 ---
 
-# Roblox Physics
+# Boilerplate Physics and Constraints
 
 ## When to Load
 
-Use this skill when building physics-driven gameplay: vehicles, ragdolls, projectiles, mechanical contraptions, elevators, swinging platforms, or anything using constraints and forces.
+Load for this domain in a game based on tarellfrost/roblox-game-boilerplate.
+Explicit user choices and the current project AGENTS.md take precedence; use
+the supplied architecture rather than general-purpose examples from another framework.
 
 ## Quick Reference
 
-### Constraint Types
-**Mechanical:** `HingeConstraint`, `PrismaticConstraint`, `CylindricalConstraint`, `BallSocketConstraint`, `UniversalConstraint`, `WeldConstraint`/`RigidConstraint`
-**Motion:** `AlignPosition`, `AlignOrientation`, `LinearVelocity`, `AngularVelocity`, `VectorForce`, `Torque`
-**Spring/Rope:** `SpringConstraint`, `RopeConstraint`, `RodConstraint`
+- Server services/Components own outcomes; controllers request motion and render prediction.
+- Follow src/server, src/client, and src/shared mappings; gameplay code is ModuleScripts loaded by the existing Bootstraps.
+- Register a new system explicitly in Registry.luau; register Component factories in the existing loader. Do not add standalone feature Scripts.
+- Init captures dependencies and state; Start connects/schedules; Destroy or component Stop releases resources. Pure children have no lifecycle hooks.
+- Use existing Trove, Signal, Input, Packet, and DataService APIs when the feature crosses those boundaries.
+- Keep static assets in Studio and save the place. Runtime objects have a cleanup owner; client presentation never decides grants or damage.
+- Verify the actual engine/package API before implementing unfamiliar methods. Check disk code and Studio runtime together.
 
-### Attachment Pattern
-Constraints connect via `Attachment` objects. Create one on each part, set `Attachment0`/`Attachment1`, and parent the constraint to part0. Actuator types include `None`, `Motor`, and `Servo`.
-
-### Vehicles
-Vehicles: use motorized `HingeConstraint` wheels, `SpringConstraint` suspension, servo steering, and `CustomPhysicalProperties` for friction tuning.
-
-### Ragdoll
-Replace Motor6Ds with `BallSocketConstraint`: create Attachments from motor.C0/C1, set `LimitsEnabled=true`, `UpperAngle=45`. Keep Root Motor6D for HRP. Set humanoid state to `Physics`. On recovery, destroy only the instances ragdoll created and restore only the motors it disabled (track both at enable time).
-
-### Authority and Network Ownership
-Classic projects: automatic ownership can give an unanchored assembly to a nearby player. `SetNetworkOwner(nil)` keeps it server-owned; `SetNetworkOwner(player)` gives a player simulation ownership. Treat player-owned physics as untrusted and validate gameplay outcomes.
-
-Server Authority: set `Workspace.AuthorityMode = Server` with its required settings. Core objects can remain server-owned while prediction keeps controls responsive, so the classic secure-but-laggy trade-off does not apply. `SetNetworkOwner()` is not a substitute.
-
-**Rule:** choose the model first. Keep NPC and gameplay-critical objects authoritative; give client ownership to non-critical physics only when the resulting behavior is acceptable and tested.
-
-### Common Gotchas
-- Constraints do nothing on Anchored parts
-- Both Attachment0 AND Attachment1 required (missing one = silent fail)
-- Over-constraining = jitter. Tune mass with `CustomPhysicalProperties`
-- Use Raycast for hitscan, `Touched` only for slow physics projectiles
-- Always set lifetime on physics projectiles (forgotten ones kill perf)
-**Need more detail?** Load `references/full.md` for the complete reference with code examples, API tables, and edge cases.
+> Implementation contracts and examples: [references/full.md](references/full.md).
